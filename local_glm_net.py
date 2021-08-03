@@ -2,7 +2,7 @@ import math
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from matplotlib import pyplot as plt
 from scipy.interpolate import UnivariateSpline
 
@@ -11,6 +11,7 @@ _VALID_ACTIVATIONS = ["relu", "tanh", "sigmoid", "linear"]
 
 class LocalGlmNet:
 
+    # region private methods
     def _create_keras_model(self) -> Tuple[keras.models.Model,
                                            keras.models.Model]:
 
@@ -51,9 +52,35 @@ class LocalGlmNet:
             out[name] = (-q * self.conf_, q * self.conf_, color)
         return out
 
+    def get_sampled_data(self,
+                         x_data: np.ndarray,
+                         sample_size: float) -> np.ndarray:
+
+        number_of_rows = int(x_data.shape[0] * sample_size)
+        sample_rows = np.sort(self._rng.choice(x_data.shape[0], size=number_of_rows, replace=False))
+        rand_col = self._rng.normal(size=(number_of_rows, 1))
+        x_data_sample = x_data[sample_rows, :]
+        x_data_sample = np.concatenate([x_data_sample, rand_col], axis=1)
+        return x_data_sample
+
+    @staticmethod
+    def check_plot_arguments(x_data: np.ndarray,
+                             feature_names,
+                             sample: float) -> None:
+
+        if sample <= 0 or sample > 1:
+            raise ValueError(f"Sample should be in interval (0, 1], but is {sample}")
+
+        if len(feature_names) != x_data.shape[0]:
+            raise ValueError(f"We have {len(feature_names)} feature names but shape of "
+                             f"input data implies {x_data.shape[0]} features")
+
+    # endregion
+
     def __init__(self,
                  shape: int,
                  layer_shapes: List[int],
+                 random_generator: Optional[np.random.Generator] = None,
                  is_classifier: bool = True,
                  layer_activation: str = "relu") -> None:
         """
@@ -66,6 +93,7 @@ class LocalGlmNet:
         :param layer_shapes: the number of units in each of the
         hidden layers, the last of which should be of equal dimension
         to the model shape
+        :param random_generator: numpy random number generator
         :param is_classifier: boolean flag for whether we are building
         a classification or regression model
         :param layer_activation: activation function for the hidden
@@ -83,12 +111,16 @@ class LocalGlmNet:
             raise ValueError(f"Activation function {layer_activation} is not supported: "
                              f"valid choices are {', '.join(_VALID_ACTIVATIONS)}")
 
+        if random_generator is None:
+            random_generator = np.random.default_rng()
+
         # model parameters (adjust for random col)
-        self._shape = shape + 1
+        self._shape = shape + 1  # adjust for random col
         self._layer_shapes = layer_shapes
-        self._layer_shapes[-1] += 1
+        self._layer_shapes[-1] += 1  # adjust for random col
         self._is_classifier = is_classifier
         self._layer_activation = layer_activation
+        self._rng = random_generator
 
         # only set after fitting
         self.prediction_model_ = None
@@ -117,8 +149,7 @@ class LocalGlmNet:
         """
 
         self.prediction_model_, self.beta_model_ = self._create_keras_model()
-        rng = np.random.default_rng()
-        random_col = rng.normal(size=(x_train.shape[0], 1))
+        random_col = self._rng.normal(size=(x_train.shape[0], 1))
         x_train = np.concatenate([x_train, random_col])
 
         callbacks = []
@@ -150,15 +181,9 @@ class LocalGlmNet:
         :param cols: number of columns in our plot
         """
 
-        # check feature names vs data passed in
-        if len(feature_names) != x_data.shape[0]:
-            raise ValueError(f"We have {len(feature_names)} feature names but shape of "
-                             f"input data implies {x_data.shape[0]} features")
-
-        # create our sampled data and work out betas
-        rng = np.random.default_rng()
-        sample_rows = rng.choice(x_data.shape[0], size=int(x_data.shape[0] * sample_size))
-        x_data_sample = x_data[sample_rows, :]
+        # get model betas
+        self.check_plot_arguments(x_data, feature_names, sample_size)
+        x_data_sample = self.get_sampled_data(x_data, sample_size)
         betas = self.beta_model_(x_data_sample)
 
         # set up our grid for plotting
@@ -202,19 +227,10 @@ class LocalGlmNet:
         :param cols: number of columns in our plot
         """
 
-        if len(feature_names) != x_data.shape[0]:
-            raise ValueError(f"We have {len(feature_names)} feature names but shape of "
-                             f"input data implies {x_data.shape[0]} features")
-
-        # create our sampled data
-        rng = np.random.default_rng()
-        sample_rows = rng.choice(x_data.shape[0], size=int(x_data.shape[0] * sample_size))
-        x_data_sample = x_data[sample_rows, :]
-
         # calculate gradients based on sample
+        self.check_plot_arguments(x_data, feature_names, sample_size)
+        x_data_sample = self.get_sampled_data(x_data, sample_size)
         input_tensor = tf.convert_to_tensor(x_data_sample)
-        rnd_col = tf.random.normal(shape=(input_tensor.shape[0], 1))
-        input_tensor = tf.concat([input_tensor, rnd_col])
         with tf.GradientTape() as tape:
             tape.watch(input_tensor)
             beta = self.beta_model_(input_tensor)
@@ -268,18 +284,9 @@ class LocalGlmNet:
         to create our plots
         """
 
-        if len(feature_names) != x_data.shape[0]:
-            raise ValueError(f"We have {len(feature_names)} feature names but shape of "
-                             f"input data implies {x_data.shape[0]} features")
-
-        # create our sampled data
-        rng = np.random.default_rng()
-        sample_rows = rng.choice(x_data.shape[0], size=int(x_data.shape[0] * sample_size))
-        x_data_sample = x_data[sample_rows, :]
-        rand_col = rng.normal(size=(x_data_sample.shape[0], 1))
-        x_data_sample = np.concatenate([x_data_sample, rand_col], axis=1)
-
         # get betas and calculate feature importance
+        self.check_plot_arguments(x_data, feature_names, sample_size)
+        x_data_sample = self.get_sampled_data(x_data, sample_size)
         betas = self.beta_model_(x_data_sample)
         avg_abs_betas = abs(betas[:-1]).mean(axis=0)
         importance, threshold = avg_abs_betas[:-1], avg_abs_betas[-1]
