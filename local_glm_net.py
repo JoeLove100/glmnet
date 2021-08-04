@@ -25,8 +25,9 @@ class LocalGlmNet:
             else:
                 x = keras.layers.Dense(m, activation=self._layer_activation, name=layer_name)(x)
 
+        x = keras.layers.Dense(self._shape, activation="linear", name="betas")(x)
         beta_model = keras.models.Model(inputs=inputs, outputs=x)
-        linear = keras.layers.Dot(axes=(1,), name="linear")([x, inputs])
+        linear = keras.layers.Dot(axes=[1, 1], name="linear")([x, inputs])
         final_activation = "sigmoid" if self._is_classifier else "linear"
         outputs = keras.layers.Activation(final_activation, name="link")(linear)
         model = keras.models.Model(inputs=inputs, outputs=outputs,
@@ -71,9 +72,9 @@ class LocalGlmNet:
         if sample <= 0 or sample > 1:
             raise ValueError(f"Sample should be in interval (0, 1], but is {sample}")
 
-        if len(feature_names) != x_data.shape[0]:
+        if len(feature_names) != x_data.shape[1]:
             raise ValueError(f"We have {len(feature_names)} feature names but shape of "
-                             f"input data implies {x_data.shape[0]} features")
+                             f"input data implies {x_data.shape[1]} features")
 
     # endregion
 
@@ -103,10 +104,6 @@ class LocalGlmNet:
         if not layer_shapes:
             raise ValueError("Must provide shape for at least one hidden layer")
 
-        if layer_shapes[-1] != shape:
-            raise ValueError(f"Output of final layer should be of size {shape} but "
-                             f"is {layer_shapes[-1]}")
-
         if layer_activation not in _VALID_ACTIVATIONS:
             raise ValueError(f"Activation function {layer_activation} is not supported: "
                              f"valid choices are {', '.join(_VALID_ACTIVATIONS)}")
@@ -117,7 +114,6 @@ class LocalGlmNet:
         # model parameters (adjust for random col)
         self._shape = shape + 1  # adjust for random col
         self._layer_shapes = layer_shapes
-        self._layer_shapes[-1] += 1  # adjust for random col
         self._is_classifier = is_classifier
         self._layer_activation = layer_activation
         self._rng = random_generator
@@ -132,7 +128,8 @@ class LocalGlmNet:
             y_train: np.ndarray,
             val_split: float = 0.1,
             epochs: int = 100,
-            use_early_stop: bool = True) -> None:
+            use_early_stop: bool = True,
+            **kwargs) -> None:
         """
         fit the wrapped neural network model using the
         standard Keras training loop
@@ -150,7 +147,7 @@ class LocalGlmNet:
 
         self.prediction_model_, self.beta_model_ = self._create_keras_model()
         random_col = self._rng.normal(size=(x_train.shape[0], 1))
-        x_train = np.concatenate([x_train, random_col])
+        x_train = np.concatenate([x_train, random_col], axis=1)
 
         callbacks = []
         if use_early_stop:
@@ -158,7 +155,8 @@ class LocalGlmNet:
             callbacks.append(early_stop)
 
         self.prediction_model_.fit(x=x_train, y=y_train, epochs=epochs,
-                                   validation_split=val_split, callbacks=callbacks)
+                                   validation_split=val_split, callbacks=callbacks,
+                                   **kwargs)
 
         betas = self.beta_model_(x_train)
         self.conf_ = np.std(betas[:, -1])
@@ -196,11 +194,11 @@ class LocalGlmNet:
         conf_intervals = self._get_confidence_intervals()
 
         # plot scatter chart for each variable
-        for i in range(betas.shape[1]):
+        for i in range(self._shape - 1):
 
             r, c = i // cols, i % cols
             ax = axs[r, c]
-            ax.scatter(x_data[:, i], betas[:, i])
+            ax.scatter(x_data_sample[:, i], betas[:, i])
             ax.set_title(f"Coefficients for {feature_names[i]}")
 
             for name, definition in conf_intervals.items():
@@ -242,7 +240,7 @@ class LocalGlmNet:
         fig, axs = plt.subplots(rows, cols)
 
         # outer loop: plot interactions for each feature
-        for i in range(x_data_sample.shape[1]):
+        for i in range(self._shape - 1):
 
             # get axes for plotting
             row, col = i // cols, i % cols
@@ -252,16 +250,16 @@ class LocalGlmNet:
 
             # select feature values and gradients, and reorder
             d_beta_0 = grads_np[:, i, :]
-            x_0 = x_data_sample[:, i].values
+            x_0 = x_data_sample[:, i]
             order = np.argsort(x_0)
             x_0 = x_0[order]
             d_beta_0 = d_beta_0[order, :]
             x_vals = np.linspace(np.min(x_0), np.max(x_0), 30)
 
             # inner loop: plot each beta
-            for j in range(d_beta_0.shape[1]):
+            for j in range(self._shape - 1):
                 spline = UnivariateSpline(x_0, d_beta_0[:, j])
-                name = f"feature_{j + 1}"
+                name = feature_names[j]
                 ax.plot(x_vals, [spline(v) for v in x_vals], label=name)
 
         # add legend at the figure level
@@ -287,7 +285,7 @@ class LocalGlmNet:
         # get betas and calculate feature importance
         self.check_plot_arguments(x_data, feature_names, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
-        betas = self.beta_model_(x_data_sample)
+        betas = self.beta_model_(x_data_sample).numpy()
         avg_abs_betas = abs(betas[:-1]).mean(axis=0)
         importance, threshold = avg_abs_betas[:-1], avg_abs_betas[-1]
 
