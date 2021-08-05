@@ -15,3 +15,8 @@ carry out feature importance and feature interaction analysis - the example
 notebook in the repo provides more details on how this functionality can be used.
 The .py file can be converted to a standard notebook using the 
 [Jupytext package](https://github.com/mwouts/jupytext).
+
+## Original paper
+
+A copy of the original paper can be found 
+[here](https://arxiv.org/abs/2107.11059).
