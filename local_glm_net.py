@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 from typing import List, Tuple, Dict, Optional
@@ -7,6 +8,9 @@ from matplotlib import pyplot as plt
 from scipy.interpolate import UnivariateSpline
 
 _VALID_ACTIVATIONS = ["relu", "tanh", "sigmoid", "linear"]
+_VALID_MODEL_TYPES = {"regression": "linear",
+                      "binary_classification": "sigmoid",
+                      "poisson": "exponential"}
 
 
 class LocalGlmNet:
@@ -28,18 +32,19 @@ class LocalGlmNet:
         x = keras.layers.Dense(self._shape, activation="linear", name="betas")(x)
         beta_model = keras.models.Model(inputs=inputs, outputs=x)
         linear = keras.layers.Dot(axes=[1, 1], name="linear")([x, inputs])
-        final_activation = "sigmoid" if self._is_classifier else "linear"
+        final_activation = _VALID_MODEL_TYPES[self._model_type]
         outputs = keras.layers.Activation(final_activation, name="link")(linear)
         model = keras.models.Model(inputs=inputs, outputs=outputs,
                                    name="LocalGLMNet")
 
         # TODO: should allow parameters in the below to be
         #   customised by user rather than set automatically
-        if self._is_classifier:
-            model.compile(optimizer="adam", loss="binary_crossentropy",
-                          metrics=["accuracy"])
-        else:
+        if self._model_type == "regression":
+            model.compile(optimizer="adam", loss="binary_crossentropy")
+        elif self._model_type == "binary_classification":
             model.compile(optimizer="adam", loss="mean_squared_error")
+        elif self._model_type == "poisson":
+            model.compile(optimizer="adam", loss="poisson")
 
         return model, beta_model
 
@@ -64,25 +69,25 @@ class LocalGlmNet:
         x_data_sample = np.concatenate([x_data_sample, rand_col], axis=1)
         return x_data_sample
 
-    @staticmethod
-    def check_plot_arguments(x_data: np.ndarray,
+    def check_plot_arguments(self,
                              feature_names,
                              sample: float) -> None:
 
         if sample <= 0 or sample > 1:
             raise ValueError(f"Sample should be in interval (0, 1], but is {sample}")
 
-        if len(feature_names) != x_data.shape[1]:
-            raise ValueError(f"We have {len(feature_names)} feature names but shape of "
-                             f"input data implies {x_data.shape[1]} features")
+        features_not_recognized = [ft for ft in feature_names if ft not in self.col_indices_]
+        if features_not_recognized:
+            raise ValueError(f"The following features were not recognized: "
+                             f"{', '.join(features_not_recognized)}")
 
     # endregion
 
     def __init__(self,
                  shape: int,
                  layer_shapes: List[int],
+                 model_type: str,
                  random_generator: Optional[np.random.Generator] = None,
-                 is_classifier: bool = True,
                  layer_activation: str = "relu") -> None:
         """
         wrapper class for the LocalGLMNet architecture with
@@ -94,9 +99,9 @@ class LocalGlmNet:
         :param layer_shapes: the number of units in each of the
         hidden layers, the last of which should be of equal dimension
         to the model shape
+        :param model_type: the form of the output of the model (ie
+        classification, regression or poisson count)
         :param random_generator: numpy random number generator
-        :param is_classifier: boolean flag for whether we are building
-        a classification or regression model
         :param layer_activation: activation function for the hidden
         layers
         """
@@ -108,13 +113,17 @@ class LocalGlmNet:
             raise ValueError(f"Activation function {layer_activation} is not supported: "
                              f"valid choices are {', '.join(_VALID_ACTIVATIONS)}")
 
+        if model_type not in _VALID_MODEL_TYPES:
+            raise ValueError(f"Model type {model_type} is not supported: "
+                             f"valid choices are {', '.join(_VALID_MODEL_TYPES)}")
+
         if random_generator is None:
             random_generator = np.random.default_rng()
 
         # model parameters (adjust for random col)
         self._shape = shape + 1  # adjust for random col
         self._layer_shapes = layer_shapes
-        self._is_classifier = is_classifier
+        self._model_type = model_type
         self._layer_activation = layer_activation
         self._rng = random_generator
 
@@ -122,9 +131,10 @@ class LocalGlmNet:
         self.prediction_model_ = None
         self.beta_model_ = None
         self.conf_ = None
+        self.col_indices_ = None
 
     def fit(self,
-            x_train: np.ndarray,
+            x_train: pd.DataFrame,
             y_train: np.ndarray,
             val_split: float = 0.1,
             epochs: int = 100,
@@ -145,6 +155,8 @@ class LocalGlmNet:
         early stopping callback
         """
 
+        self.col_indices_ = {col: i for i, col in enumerate(x_train.columns)}
+        x_train = x_train.values
         self.prediction_model_, self.beta_model_ = self._create_keras_model()
         random_col = self._rng.normal(size=(x_train.shape[0], 1))
         x_train = np.concatenate([x_train, random_col], axis=1)
@@ -163,7 +175,7 @@ class LocalGlmNet:
 
     def plot_betas_by_feature(self,
                               x_data: np.ndarray,
-                              feature_names: List[str],
+                              features_to_plot: Optional[List[str]] = None,
                               sample_size: float = 0.25,
                               cols: int = 3) -> [plt.Figure, plt.Axes]:
         """
@@ -173,16 +185,22 @@ class LocalGlmNet:
 
         :param x_data: data for which we would like to plot our
         beta values
-        :param feature_names: names for the features in our x_data
+        :param features_to_plot: names for the features in our x_data
+        that we would like to plot
         :param sample_size: % proportion of the feature values to sample
         to create our plots
         :param cols: number of columns in our plot
         """
 
         # get model betas
-        self.check_plot_arguments(x_data, feature_names, sample_size)
+        if not features_to_plot:
+            features_to_plot = list(self.col_indices_)
+
+        self.check_plot_arguments(features_to_plot, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
         betas = self.beta_model_(x_data_sample)
+        col_indices = [self.col_indices_[ft] for ft in features_to_plot]
+        betas = betas.numpy()[:, col_indices]
 
         # set up our grid for plotting
         rows = betas.shape[1] // cols
@@ -194,12 +212,12 @@ class LocalGlmNet:
         conf_intervals = self._get_confidence_intervals()
 
         # plot scatter chart for each variable
-        for i in range(self._shape - 1):
+        for i, feature_name in enumerate(features_to_plot):
 
             r, c = i // cols, i % cols
             ax = axs[r, c]
             ax.scatter(x_data_sample[:, i], betas[:, i])
-            ax.set_title(f"Coefficients for {feature_names[i]}")
+            ax.set_title(f"Coefficients for {feature_name}")
 
             for name, definition in conf_intervals.items():
                 lower, upper, color = definition
@@ -210,7 +228,7 @@ class LocalGlmNet:
 
     def plot_interactions(self,
                           x_data: np.ndarray,
-                          feature_names: List[str],
+                          features_to_plot: Optional[List[str]] = None,
                           sample_size: float = 1,
                           cols: int = 2) -> Tuple[plt.Figure, plt.Axes]:
         """
@@ -219,34 +237,38 @@ class LocalGlmNet:
 
         :param x_data: data for which we would like to plot our
         beta values
-        :param feature_names: names for the features in our x_data
+        :param features_to_plot: names for the features in our x_data
+        that we would like to plot
         :param sample_size: % proportion of the feature values to sample
         to create our plots
         :param cols: number of columns in our plot
         """
 
         # calculate gradients based on sample
-        self.check_plot_arguments(x_data, feature_names, sample_size)
+        if features_to_plot is None:
+            features_to_plot = list(self.col_indices_)
+        self.check_plot_arguments(features_to_plot, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
         input_tensor = tf.convert_to_tensor(x_data_sample)
         with tf.GradientTape() as tape:
             tape.watch(input_tensor)
             beta = self.beta_model_(input_tensor)
         grads = tape.batch_jacobian(beta, input_tensor)
-        grads_np = grads.numpy()  # easier to work with numpy array for plotting
+        col_indices = [self.col_indices_[ft] for ft in features_to_plot]
+        grads_np = grads.numpy()[:, col_indices]
 
         # set up our axes for plotting
-        rows = int(math.ceil(x_data.shape[1] / cols))
+        rows = int(math.ceil(len(features_to_plot) / cols))
         fig, axs = plt.subplots(rows, cols)
 
         # outer loop: plot interactions for each feature
-        for i in range(self._shape - 1):
+        for i, feature_name in enumerate(features_to_plot):
 
             # get axes for plotting
             row, col = i // cols, i % cols
             ax = axs[row, col]
             ax.set_ylim(-0.5, 0.5)  # TODO: change limits based on data
-            ax.set_title(f"Interactions for feature {feature_names[i]}", fontsize=15)
+            ax.set_title(f"Interactions for feature {feature_name}", fontsize=15)
 
             # select feature values and gradients, and reorder
             d_beta_0 = grads_np[:, i, :]
@@ -257,10 +279,9 @@ class LocalGlmNet:
             x_vals = np.linspace(np.min(x_0), np.max(x_0), 30)
 
             # inner loop: plot each beta
-            for j in range(self._shape - 1):
+            for j, other_feature_name in enumerate(features_to_plot):
                 spline = UnivariateSpline(x_0, d_beta_0[:, j])
-                name = feature_names[j]
-                ax.plot(x_vals, [spline(v) for v in x_vals], label=name)
+                ax.plot(x_vals, [spline(v) for v in x_vals], label=other_feature_name)
 
         # add legend at the figure level
         handles, labels = axs[0, 0].get_legend_handles_labels()
@@ -269,7 +290,7 @@ class LocalGlmNet:
 
     def plot_feature_importance(self,
                                 x_data: np.ndarray,
-                                feature_names: List[str],
+                                features_to_plot: Optional[List[str]] = None,
                                 sample_size: float = 1) -> Tuple[plt.Figure, plt.Axes]:
         """
         for each feature we plot a graph showing how the gradients of
@@ -277,29 +298,33 @@ class LocalGlmNet:
 
         :param x_data: data for which we would like to plot our
         beta values
-        :param feature_names: names for the features in our x_data
+        :param features_to_plot: names for the features in our x_data
+        that we would like to plot
         :param sample_size: % proportion of the feature values to sample
         to create our plots
         """
 
         # get betas and calculate feature importance
-        self.check_plot_arguments(x_data, feature_names, sample_size)
+        if features_to_plot is None:
+            features_to_plot = list(self.col_indices_)
+        self.check_plot_arguments(features_to_plot, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
-        betas = self.beta_model_(x_data_sample).numpy()
+        col_indices = [self.col_indices_[ft] for ft in features_to_plot] + [-1]
+        betas = self.beta_model_(x_data_sample).numpy()[:, col_indices]
         avg_abs_betas = abs(betas[:-1]).mean(axis=0)
         importance, threshold = avg_abs_betas[:-1], avg_abs_betas[-1]
 
         # reorder for plotting
         order = np.argsort(importance)
         importance = importance[order]
-        feature_names = [feature_names[i] for i in order]
+        features_to_plot = [features_to_plot[i] for i in order]  # reorder for plotting
 
         # set up axes and make bar plot
         fig, ax = plt.subplots()
-        positions = np.arange(x_data.shape[1])
+        positions = np.arange(len(features_to_plot))
         ax.barh(positions, importance)
         ax.set_yticks(positions)
-        ax.set_yticklabels(feature_names)
+        ax.set_yticklabels(features_to_plot)
         ax.axvline(threshold, color="red", linestyle="--")
 
         return fig, ax
