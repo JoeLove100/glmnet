@@ -1,11 +1,11 @@
 name: standard-python-ci
 on: [push]
 jobs:
-  run-tox:
+  run-tox-tests:
       runs-on: windows-latest
       strategy:
         matrix:
-          python: [3.7, 3.8, 3.9]
+          python: [3.6, 3.7, 3.8, 3.9]
       steps:
         - uses: actions/checkout@v2
         - name: Set up Python
@@ -16,3 +16,15 @@ jobs:
           run: pip install tox
         - name: Run Tox
           run: tox -e py
+  run-tox-linting:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+      uses: actions/setup-python@v2
+      - name: Install tox
+        run: pip install tox
+      - name: Run linting
+        run: tox -e linting
+      - name: Run coverage
+        run: tox -e coverage
