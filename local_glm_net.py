@@ -25,15 +25,20 @@ class LocalGlmNet:
         for i, m in enumerate(self._layer_shapes):
             layer_name = f"hidden_{i}"
             if x is None:
-                x = keras.layers.Dense(m, activation=self._layer_activation, name=layer_name)(inputs)
+                x = keras.layers.Dense(m, activation=self._layer_activation,
+                                       name=layer_name)(inputs)
             else:
-                x = keras.layers.Dense(m, activation=self._layer_activation, name=layer_name)(x)
+                x = keras.layers.Dense(m, activation=self._layer_activation,
+                                       name=layer_name)(x)
 
-        x = keras.layers.Dense(self._shape, activation="linear", name="betas")(x)
+        x = keras.layers.Dense(self._shape, activation="linear",
+                               name="betas")(x)
         beta_model = keras.models.Model(inputs=inputs, outputs=x)
-        linear = keras.layers.Dot(axes=[1, 1], name="linear")([x, inputs])
+        linear = keras.layers.Dot(axes=[1, 1],
+                                  name="linear")([x, inputs])
         final_activation = _VALID_MODEL_TYPES[self._model_type]
-        outputs = keras.layers.Activation(final_activation, name="link")(linear)
+        outputs = keras.layers.Activation(final_activation,
+                                          name="link")(linear)
         model = keras.models.Model(inputs=inputs, outputs=outputs,
                                    name="LocalGLMNet")
 
@@ -63,7 +68,9 @@ class LocalGlmNet:
                          sample_size: float) -> np.ndarray:
 
         number_of_rows = int(x_data.shape[0] * sample_size)
-        sample_rows = np.sort(self._rng.choice(x_data.shape[0], size=number_of_rows, replace=False))
+        sample_rows = np.sort(self._rng.choice(x_data.shape[0],
+                                               size=number_of_rows,
+                                               replace=False))
         rand_col = self._rng.normal(size=(number_of_rows, 1))
         x_data_sample = x_data[sample_rows, :]
         x_data_sample = np.concatenate([x_data_sample, rand_col], axis=1)
@@ -74,9 +81,11 @@ class LocalGlmNet:
                              sample: float) -> None:
 
         if sample <= 0 or sample > 1:
-            raise ValueError(f"Sample should be in interval (0, 1], but is {sample}")
+            raise ValueError(f"Sample should be in interval (0, 1], "
+                             f"but is {sample}")
 
-        features_not_recognized = [ft for ft in feature_names if ft not in self.col_indices_]
+        features_not_recognized = [ft for ft in feature_names if
+                                   ft not in self.col_indices_]
         if features_not_recognized:
             raise ValueError(f"The following features were not recognized: "
                              f"{', '.join(features_not_recognized)}")
@@ -107,15 +116,18 @@ class LocalGlmNet:
         """
 
         if not layer_shapes:
-            raise ValueError("Must provide shape for at least one hidden layer")
+            raise ValueError("Must provide shape for at least "
+                             "one hidden layer")
 
         if layer_activation not in _VALID_ACTIVATIONS:
-            raise ValueError(f"Activation function {layer_activation} is not supported: "
-                             f"valid choices are {', '.join(_VALID_ACTIVATIONS)}")
+            raise ValueError(f"Activation function {layer_activation} "
+                             f"is not supported: valid choices "
+                             f"are {', '.join(_VALID_ACTIVATIONS)}")
 
         if model_type not in _VALID_MODEL_TYPES:
-            raise ValueError(f"Model type {model_type} is not supported: "
-                             f"valid choices are {', '.join(_VALID_MODEL_TYPES)}")
+            raise ValueError(f"Model type {model_type} is not "
+                             f"supported: valid choices "
+                             f"are {', '.join(_VALID_MODEL_TYPES)}")
 
         if random_generator is None:
             random_generator = np.random.default_rng()
@@ -163,12 +175,13 @@ class LocalGlmNet:
 
         callbacks = []
         if use_early_stop:
-            early_stop = keras.callbacks.EarlyStopping(monitor="val_loss", patience=2)
+            early_stop = keras.callbacks.EarlyStopping(monitor="val_loss",
+                                                       patience=2)
             callbacks.append(early_stop)
 
         self.prediction_model_.fit(x=x_train, y=y_train, epochs=epochs,
-                                   validation_split=val_split, callbacks=callbacks,
-                                   **kwargs)
+                                   validation_split=val_split,
+                                   callbacks=callbacks, **kwargs)
 
         betas = self.beta_model_(x_train)
         self.conf_ = np.std(betas[:, -1])
@@ -268,7 +281,8 @@ class LocalGlmNet:
             row, col = i // cols, i % cols
             ax = axs[row, col]
             ax.set_ylim(-0.5, 0.5)  # TODO: change limits based on data
-            ax.set_title(f"Interactions for feature {feature_name}", fontsize=15)
+            ax.set_title(f"Interactions for feature {feature_name}",
+                         fontsize=15)
 
             # select feature values and gradients, and reorder
             d_beta_0 = grads_np[:, i, :]
@@ -281,7 +295,8 @@ class LocalGlmNet:
             # inner loop: plot each beta
             for j, other_feature_name in enumerate(features_to_plot):
                 spline = UnivariateSpline(x_0, d_beta_0[:, j])
-                ax.plot(x_vals, [spline(v) for v in x_vals], label=other_feature_name)
+                ax.plot(x_vals, [spline(v) for v in x_vals],
+                        label=other_feature_name)
 
         # add legend at the figure level
         handles, labels = axs[0, 0].get_legend_handles_labels()
@@ -291,7 +306,8 @@ class LocalGlmNet:
     def plot_feature_importance(self,
                                 x_data: np.ndarray,
                                 features_to_plot: Optional[List[str]] = None,
-                                sample_size: float = 1) -> Tuple[plt.Figure, plt.Axes]:
+                                sample_size: float = 1) \
+            -> Tuple[plt.Figure, plt.Axes]:
         """
         for each feature we plot a graph showing how the gradients of
         the betas vary with the value of the given feature
@@ -314,10 +330,10 @@ class LocalGlmNet:
         avg_abs_betas = abs(betas[:-1]).mean(axis=0)
         importance, threshold = avg_abs_betas[:-1], avg_abs_betas[-1]
 
-        # reorder for plotting
+        # reorder data and feature names for plotting
         order = np.argsort(importance)
         importance = importance[order]
-        features_to_plot = [features_to_plot[i] for i in order]  # reorder for plotting
+        features_to_plot = [features_to_plot[i] for i in order]
 
         # set up axes and make bar plot
         fig, ax = plt.subplots()

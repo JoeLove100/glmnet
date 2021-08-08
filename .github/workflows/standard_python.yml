@@ -1,0 +1,13 @@
+name: standard-python-ci
+on: [push]
+jobs:
+  run-tox:
+      runs-on: windows-latest
+      steps:
+        - uses: actions/checkout@v2
+        - name: Set up Python
+        - uses: actions/setup-python@v2
+        - name: Install tox
+        - run: pip install tox
+        - name: Run Tox
+        - run: tox

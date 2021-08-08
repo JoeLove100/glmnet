@@ -9,41 +9,44 @@ class TestLocalGlmNet(unittest.TestCase):
     @classmethod
     def _get_glm_model(cls):
         rng = np.random.default_rng(1234)
-        model = LocalGlmNet(4, [2, 4], rng)
+        model = LocalGlmNet(4, [2, 4], "regression", rng)
         return model
 
-    def test_wrong_number_of_columns_for_features_fails(self):
+    def test_feature_to_plot_not_in_col_indices(self):
         # arrange
         model = self._get_glm_model()
         test_data = np.zeros(shape=(2, 2))
-        test_feature_names = ["name_1", "name_2", "name_3"]
+        test_features_to_plot = ["name_1", "name_2", "name_3"]
+        model.col_indices_ = {"name_1": 1, "name_3": 2}
         test_sample = 0.5
 
         # act/assert
         with self.assertRaises(ValueError):
-            model.check_plot_arguments(test_data, test_feature_names, test_sample)
+            model.check_plot_arguments(test_features_to_plot, test_sample)
 
     def test_sample_negative_fails(self):
         # arrange
         model = self._get_glm_model()
         test_data = np.zeros(shape=(2, 2))
         test_feature_names = ["name_1", "name_2", "name_3"]
+        model.col_indices_ = {"name_1": 1, "name_2": 2, "name_3": 3}
         test_sample = -0.1
 
         # act/assert
         with self.assertRaises(ValueError):
-            model.check_plot_arguments(test_data, test_feature_names, test_sample)
+            model.check_plot_arguments(test_feature_names, test_sample)
 
     def test_sample_bigger_than_one_fails(self):
         # arrange
         model = self._get_glm_model()
         test_data = np.zeros(shape=(2, 2))
         test_feature_names = ["name_1", "name_2", "name_3"]
+        model.col_indices_ = {"name_1": 1, "name_2": 2, "name_3": 3}
         test_sample = -0.1
 
         # act/assert
         with self.assertRaises(ValueError):
-            model.check_plot_arguments(test_data, test_feature_names, test_sample)
+            model.check_plot_arguments(test_feature_names, test_sample)
 
     def test_get_sampled_data(self):
         # arrange

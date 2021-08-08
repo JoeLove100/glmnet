@@ -6,3 +6,4 @@ venv/
 *.pyc
 *.csv
 */__pycache__/
+.tox/

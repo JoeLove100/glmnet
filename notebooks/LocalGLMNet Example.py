@@ -70,8 +70,9 @@ for col in list(features):
 # %%
 # define and fit model
 
-glm_model = LocalGlmNet(shape=7, layer_shapes=[20, 15, 10, 40], is_classifier=False, layer_activation="tanh")
-glm_model.fit(features.values, target.values, epochs=200, verbose=False)
+glm_model = LocalGlmNet(shape=7, layer_shapes=[20, 15, 10, 40], 
+                        model_type="binary_classification", layer_activation="tanh")
+glm_model.fit(features, target, epochs=200, verbose=False)
 
 # %% [markdown]
 # ### Create plots from model
@@ -86,6 +87,9 @@ plt.show();
 
 # %% [markdown]
 # In our second chart, we can plot the "interactions" between different features, where we represent these as the gradient of each "attention" beta with respect to each of the underlying variables.
+
+# %%
+features.shape
 
 # %%
 fig, axs = glm_model.plot_interactions(features.values, list(features), sample_size=1)
