@@ -1,4 +1,4 @@
-name: standard-python-ci
+name: Master build
 on: [push]
 jobs:
   run-tox-tests:

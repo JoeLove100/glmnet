@@ -1,5 +1,7 @@
 # glmnet
 
+![build passing](https://github.com/JoeLove100/glmnet/actions/workflows/standard_python.yml/badge.svg)
+
 ## Introduction
 This is an implementation of the LocalGLMnet model suggested
 by Ronald Richman and Mario W&uuml;thrich in their July 2021 paper
