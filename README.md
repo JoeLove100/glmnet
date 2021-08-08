@@ -36,7 +36,7 @@ are based on the values observed for a totally random feature with no relation t
 By computing the derivative of each attention beta weight with respect to each of the variables, we can see
 the way in which the different variables interact with one another.
 
-**TODO: add chart for feature interactions**
+![plot](./resources/interactions.png)
 
 ### Feature importance
 

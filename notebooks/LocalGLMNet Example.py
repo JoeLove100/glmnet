@@ -71,7 +71,7 @@ for col in list(features):
 # define and fit model
 
 glm_model = LocalGlmNet(shape=7, layer_shapes=[20, 15, 10, 40], 
-                        model_type="binary_classification", layer_activation="tanh")
+                        model_type="regression", layer_activation="tanh")
 glm_model.fit(features, target, epochs=200, verbose=False)
 
 # %% [markdown]
@@ -102,5 +102,7 @@ plt.show();
 # %%
 fig, axs = glm_model.plot_feature_importance(features.values, list(features), sample_size=1)
 fig.set_size_inches(8, 6)
+
+# %%
 
 # %%
