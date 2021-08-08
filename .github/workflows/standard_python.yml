@@ -3,11 +3,16 @@ on: [push]
 jobs:
   run-tox:
       runs-on: windows-latest
+      strategy:
+        matrix:
+          python: [3.7, 3.8, 3.9]
       steps:
         - uses: actions/checkout@v2
         - name: Set up Python
-        - uses: actions/setup-python@v2
+          uses: actions/setup-python@v2
+          with:
+            python-version: ${{ matrix.python }}
         - name: Install tox
-        - run: pip install tox
+          run: pip install tox
         - name: Run Tox
-        - run: tox
+          run: tox -e py
