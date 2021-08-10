@@ -45,9 +45,9 @@ class LocalGlmNet:
         # TODO: should allow parameters in the below to be
         #   customised by user rather than set automatically
         if self._model_type == "regression":
-            model.compile(optimizer="adam", loss="binary_crossentropy")
-        elif self._model_type == "binary_classification":
             model.compile(optimizer="adam", loss="mean_squared_error")
+        elif self._model_type == "binary_classification":
+            model.compile(optimizer="adam", loss="binary_crossentropy")
         elif self._model_type == "poisson":
             model.compile(optimizer="adam", loss="poisson")
 
@@ -143,7 +143,7 @@ class LocalGlmNet:
         self.prediction_model_ = None
         self.beta_model_ = None
         self.conf_ = None
-        self.col_indices_ = None
+        self.col_indices_ = {"Random": shape}
 
     def fit(self,
             x_train: pd.DataFrame,
@@ -167,7 +167,8 @@ class LocalGlmNet:
         early stopping callback
         """
 
-        self.col_indices_ = {col: i for i, col in enumerate(x_train.columns)}
+        self.col_indices_.update({col: i for i, col in
+                                  enumerate(x_train.columns)})
         x_train = x_train.values
         self.prediction_model_, self.beta_model_ = self._create_keras_model()
         random_col = self._rng.normal(size=(x_train.shape[0], 1))
@@ -190,7 +191,10 @@ class LocalGlmNet:
                               x_data: np.ndarray,
                               features_to_plot: Optional[List[str]] = None,
                               sample_size: float = 0.25,
-                              cols: int = 3) -> [plt.Figure, plt.Axes]:
+                              cols: int = 3,
+                              plot_random: bool = False,
+                              plot_as_contributions: bool = False) \
+            -> [plt.Figure, plt.Axes]:
         """
         utility function to plot the distribution of the local
         beta features given a set of feature values. Can optionally plot
@@ -203,17 +207,28 @@ class LocalGlmNet:
         :param sample_size: % proportion of the feature values to sample
         to create our plots
         :param cols: number of columns in our plot
+        :param plot_random: boolean flag for whether or not we would like
+        to plot a figure for the additional random variable
+        :param plot_as_contributions: boolean flag which, if true, plots
+        contributions rather than outright beta values
         """
 
         # get model betas
-        if not features_to_plot:
+        if not features_to_plot and plot_random:
             features_to_plot = list(self.col_indices_)
+        elif not features_to_plot:
+            features_to_plot += [ft for ft in self.col_indices_ if
+                                 ft != "Random"]
 
         self.check_plot_arguments(features_to_plot, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
         betas = self.beta_model_(x_data_sample)
         col_indices = [self.col_indices_[ft] for ft in features_to_plot]
         betas = betas.numpy()[:, col_indices]
+        x_data_sample = x_data_sample[:, col_indices]
+
+        if plot_as_contributions:
+            betas = x_data_sample * betas
 
         # set up our grid for plotting
         rows = betas.shape[1] // cols
@@ -231,11 +246,13 @@ class LocalGlmNet:
             ax = axs[r, c]
             ax.scatter(x_data_sample[:, i], betas[:, i])
             ax.set_title(f"Coefficients for {feature_name}")
+            ax.set_ylim(-1, 1)
 
-            for name, definition in conf_intervals.items():
-                lower, upper, color = definition
-                ax.axhline(lower, color=color, linestyle="--")
-                ax.axhline(upper, color=color, linestyle="--")
+            if not plot_as_contributions:
+                for name, definition in conf_intervals.items():
+                    lower, upper, color = definition
+                    ax.axhline(lower, color=color, linestyle="--")
+                    ax.axhline(upper, color=color, linestyle="--")
 
         return fig, axs
 
@@ -269,6 +286,7 @@ class LocalGlmNet:
         grads = tape.batch_jacobian(beta, input_tensor)
         col_indices = [self.col_indices_[ft] for ft in features_to_plot]
         grads_np = grads.numpy()[:, col_indices]
+        x_data_sample = x_data_sample[:, col_indices]
 
         # set up our axes for plotting
         rows = int(math.ceil(len(features_to_plot) / cols))

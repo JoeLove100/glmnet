@@ -20,14 +20,70 @@
 # The aim of this notebook is to provide a brief demonstration of the uses of the LocalGLMNet model. While such deep learning techniques are better suited to larger and more complex tabular datasets, we use the classic Abalone dataset here for simplicty.
 
 # %%
+# add parent directory to path
+
+import sys
+sys.path.append("../")
+
+# %%
 # do imports
 
+import numpy as np
 import pandas as pd
+from typing import Tuple
 from local_glm_net import LocalGlmNet
 from matplotlib import pyplot as plt
 
 # %% [markdown]
-# ### Read in and process data
+# ### Use dummy data
+
+# %%
+np.eye(8)
+
+# %%
+rng = np.random.default_rng(1994)
+
+def get_dummy_target(row: pd.Series) -> float:
+    
+    x_1 = row.iloc[0]
+    x_2 = row.iloc[1]
+    x_3 = row.iloc[2]
+    x_4 = row.iloc[3]
+    x_5 = row.iloc[4]
+    x_6 = row.iloc[5]
+    
+    val =  0.5 * x_1 - 0.25 * (x_2 ** 2) + 0.5 * abs(x_3) * np.sin(2 * x_3) + \
+           0.5 * x_4 * x_5 + 0.125 * (x_5 ** 2) * x_6 + rng.normal()
+    return val
+    
+def get_dummy_data(size: int) -> Tuple[pd.DataFrame, pd.Series]:
+    
+    corr = np.eye(8)
+    corr[1, 7] = corr[7, 1] = 0.5
+    features = rng.multivariate_normal(mean=np.zeros(8), cov=corr, size=size)
+    features = pd.DataFrame(features, columns=[f"feature_{i + 1}" for i in range(8)])
+    target = features.apply(get_dummy_target, axis=1)
+    return features, target
+
+dummy_features, dummy_target = get_dummy_data(int(1e5))
+
+# %%
+glm_model = LocalGlmNet(shape=8, layer_shapes=[20, 15, 10], 
+                        model_type="regression", layer_activation="tanh")
+glm_model.fit(dummy_features, dummy_target, epochs=200, val_split=0.2, verbose=False, batch_size=8)
+
+# %%
+fig, axs = glm_model.plot_betas_by_feature(dummy_features.values, sample_size=0.05, 
+                                           plot_random=True, plot_as_contributions=False)
+fig.set_size_inches(20, 8)
+fig.tight_layout()
+
+# %%
+fig, axs = glm_model.plot_interactions(features.values, sample_size=0.1, cols=2)
+fig.set_size_inches(20, 8)
+
+# %% [markdown]
+# ### Read in and process Abalone data
 
 # %% [markdown]
 # We first need to read in the Abalone dataset from the TensorFlow datasets, and pre-process the features slighlty such that these are all normalised to have mean 0 and standard deviation 1.
@@ -81,7 +137,7 @@ glm_model.fit(features, target, epochs=200, verbose=False)
 # Now we have a trained model we can use this to make a series of plots in order to better explore our data (and how our model uses it to make predictions). This is at the heart of "explainable" machine learning.  First of all, we can create a plot to show the distribution of the "attention" beta parameters for each feature at each point. Note the dotted lines, which show 95%, 99% and 99.9% central confidence intervals.
 
 # %%
-fig, axs = glm_model.plot_betas_by_feature(features.values, list(features), sample_size=1)
+fig, axs = glm_model.plot_betas_by_feature(features.values, list(features), sample_size=1, plot_random=True)
 fig.set_size_inches(15, 20)
 plt.show();
 
