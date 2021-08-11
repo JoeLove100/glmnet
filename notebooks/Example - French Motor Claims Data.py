@@ -20,6 +20,12 @@
 # Replicate the analysis in the initial paper.
 
 # %%
+# add parent dir to path
+
+import sys
+sys.path.append("../")
+
+# %%
 # do imports
 
 import numpy as np
@@ -206,7 +212,7 @@ MAX_EPOCHS = 100
 
 # %%
 random_gen = np.random.default_rng(1234)
-local_glm = LocalGlmNet(shape=features.shape[1], layer_shapes = [20, 15, 10], model_type="poisson", 
+local_glm = LocalGlmNet(shape=features.shape[1], layer_shapes = [20, 15, 20], model_type="poisson", 
                         random_generator=random_gen, layer_activation="tanh")
 
 # %%
@@ -216,7 +222,15 @@ local_glm.fit(features, target, 0.1, MAX_EPOCHS, use_early_stop=True, batch_size
 # ## Make diagnostic plots
 
 # %%
-fig, ax = local_glm.plot_betas_by_feature(x_data=features.values, features_to_plot=cts_columns, cols=2)
+fig, ax = local_glm.plot_betas_by_feature(x_data=features.values, features_to_plot=cts_columns, cols=2, 
+                                          sample_size=0.2, plot_random=True)
+fig.set_size_inches(15, 20)
+plt.show()
+
+# %%
+fig, ax = local_glm.plot_betas_by_feature(x_data=features.values, features_to_plot=cts_columns, cols=2, 
+                                          sample_size=0.2, plot_random=True, plot_as_contributions=True,
+                                         y_lim=(-5, 3))
 fig.set_size_inches(15, 20)
 plt.show()
 
@@ -229,5 +243,9 @@ plt.show()
 fig, ax = local_glm.plot_feature_importance(features.values, cts_columns)
 fig.set_size_inches(10, 10)
 plt.show()
+
+# %%
+fig, axs = local_glm.plot_categorical_betas(features.values, features_to_plot=categorical_components, cols=1)
+fig.set_size_inches(10, 15)
 
 # %%

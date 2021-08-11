@@ -38,9 +38,6 @@ from matplotlib import pyplot as plt
 # ### Use dummy data
 
 # %%
-np.eye(8)
-
-# %%
 rng = np.random.default_rng(1994)
 
 def get_dummy_target(row: pd.Series) -> float:
@@ -79,8 +76,18 @@ fig.set_size_inches(20, 8)
 fig.tight_layout()
 
 # %%
-fig, axs = glm_model.plot_interactions(features.values, sample_size=0.1, cols=2)
+fig, axs = glm_model.plot_betas_by_feature(dummy_features.values, sample_size=0.05, 
+                                           plot_random=True, plot_as_contributions=True)
 fig.set_size_inches(20, 8)
+fig.tight_layout()
+
+# %%
+fig, ax = glm_model.plot_interactions(dummy_features.values, sample_size=0.1)
+fig.set_size_inches(15, 25)
+
+# %%
+fig, axs = glm_model.plot_feature_importance(dummy_features.values)
+fig.set_size_inches(10, 10)
 
 # %% [markdown]
 # ### Read in and process Abalone data
@@ -106,6 +113,11 @@ raw_data.isnull().sum()
 raw_data.describe().T
 
 # %%
+# remove height outliers
+
+raw_data = raw_data[raw_data["Height"] < 0.5]
+
+# %%
 # split into features/target and normalise the former
 
 data = raw_data.copy(deep=True)
@@ -116,6 +128,9 @@ for col in list(features):
     std = features[col].std()
     features[col] = (features[col] - mean) / std
 
+
+# %%
+features.describe().T
 
 # %% [markdown]
 # ### Create and fit our model
@@ -137,15 +152,12 @@ glm_model.fit(features, target, epochs=200, verbose=False)
 # Now we have a trained model we can use this to make a series of plots in order to better explore our data (and how our model uses it to make predictions). This is at the heart of "explainable" machine learning.  First of all, we can create a plot to show the distribution of the "attention" beta parameters for each feature at each point. Note the dotted lines, which show 95%, 99% and 99.9% central confidence intervals.
 
 # %%
-fig, axs = glm_model.plot_betas_by_feature(features.values, list(features), sample_size=1, plot_random=True)
+fig, axs = glm_model.plot_betas_by_feature(features.values, list(features), sample_size=1, plot_random=True, y_lim=(-12,12))
 fig.set_size_inches(15, 20)
 plt.show();
 
 # %% [markdown]
 # In our second chart, we can plot the "interactions" between different features, where we represent these as the gradient of each "attention" beta with respect to each of the underlying variables.
-
-# %%
-features.shape
 
 # %%
 fig, axs = glm_model.plot_interactions(features.values, list(features), sample_size=1)
@@ -158,7 +170,5 @@ plt.show();
 # %%
 fig, axs = glm_model.plot_feature_importance(features.values, list(features), sample_size=1)
 fig.set_size_inches(8, 6)
-
-# %%
 
 # %%

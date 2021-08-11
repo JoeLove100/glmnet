@@ -77,15 +77,27 @@ class LocalGlmNet:
         return x_data_sample
 
     def check_plot_arguments(self,
-                             feature_names,
-                             sample: float) -> None:
+                             feature_names: List[str],
+                             sample: float,
+                             is_categorical: bool = False) -> None:
 
+        # check sample proportion is valid
         if sample <= 0 or sample > 1:
             raise ValueError(f"Sample should be in interval (0, 1], "
                              f"but is {sample}")
 
-        features_not_recognized = [ft for ft in feature_names if
-                                   ft not in self.col_indices_]
+        # check we actually have data for all features to plot
+        if is_categorical:
+            features_not_recognized = []
+            for ft in feature_names:
+                encoded_features = [col_name for col_name in self.col_indices_
+                                    if col_name.startswith(ft)]
+                if not encoded_features:
+                    features_not_recognized.append(ft)
+        else:
+            features_not_recognized = [ft for ft in feature_names if
+                                       ft not in self.col_indices_]
+
         if features_not_recognized:
             raise ValueError(f"The following features were not recognized: "
                              f"{', '.join(features_not_recognized)}")
@@ -193,12 +205,13 @@ class LocalGlmNet:
                               sample_size: float = 0.25,
                               cols: int = 3,
                               plot_random: bool = False,
-                              plot_as_contributions: bool = False) \
+                              plot_as_contributions: bool = False,
+                              y_lim: Tuple[float, float] = (-1, 1)) \
             -> [plt.Figure, plt.Axes]:
         """
         utility function to plot the distribution of the local
         beta features given a set of feature values. Can optionally plot
-        confidence intervals to help with feature selection
+        confidence intervals to help with feature selection,
 
         :param x_data: data for which we would like to plot our
         beta values
@@ -211,6 +224,7 @@ class LocalGlmNet:
         to plot a figure for the additional random variable
         :param plot_as_contributions: boolean flag which, if true, plots
         contributions rather than outright beta values
+        :param y_lim: y axis min and max values to scale plots properly
         """
 
         # get model betas
@@ -219,6 +233,8 @@ class LocalGlmNet:
         elif not features_to_plot:
             features_to_plot += [ft for ft in self.col_indices_ if
                                  ft != "Random"]
+        elif plot_random:
+            features_to_plot = features_to_plot + ["Random"]
 
         self.check_plot_arguments(features_to_plot, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
@@ -245,8 +261,11 @@ class LocalGlmNet:
             r, c = i // cols, i % cols
             ax = axs[r, c]
             ax.scatter(x_data_sample[:, i], betas[:, i])
-            ax.set_title(f"Coefficients for {feature_name}")
-            ax.set_ylim(-1, 1)
+            if plot_as_contributions:
+                ax.set_title(f"Contributions for {feature_name}")
+            else:
+                ax.set_title(f"Coefficients for {feature_name}")
+            ax.set_ylim(*y_lim)
 
             if not plot_as_contributions:
                 for name, definition in conf_intervals.items():
@@ -285,7 +304,8 @@ class LocalGlmNet:
             beta = self.beta_model_(input_tensor)
         grads = tape.batch_jacobian(beta, input_tensor)
         col_indices = [self.col_indices_[ft] for ft in features_to_plot]
-        grads_np = grads.numpy()[:, col_indices]
+        grads_np = grads.numpy()[np.ix_(range(grads.shape[0]),  col_indices,
+                                        col_indices)]
         x_data_sample = x_data_sample[:, col_indices]
 
         # set up our axes for plotting
@@ -298,7 +318,7 @@ class LocalGlmNet:
             # get axes for plotting
             row, col = i // cols, i % cols
             ax = axs[row, col]
-            ax.set_ylim(-0.5, 0.5)  # TODO: change limits based on data
+            ax.set_ylim(-0.7, 0.7)  # TODO: change limits based on data
             ax.set_title(f"Interactions for feature {feature_name}",
                          fontsize=15)
 
@@ -316,9 +336,8 @@ class LocalGlmNet:
                 ax.plot(x_vals, [spline(v) for v in x_vals],
                         label=other_feature_name)
 
-        # add legend at the figure level
-        handles, labels = axs[0, 0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', ncol=4)
+            ax.legend(loc="lower right", ncol=2)
+
         return fig, axs
 
     def plot_feature_importance(self,
@@ -341,6 +360,8 @@ class LocalGlmNet:
         # get betas and calculate feature importance
         if features_to_plot is None:
             features_to_plot = list(self.col_indices_)
+            features_to_plot.remove("Random")  # only plot random threshold
+
         self.check_plot_arguments(features_to_plot, sample_size)
         x_data_sample = self.get_sampled_data(x_data, sample_size)
         col_indices = [self.col_indices_[ft] for ft in features_to_plot] + [-1]
@@ -362,3 +383,53 @@ class LocalGlmNet:
         ax.axvline(threshold, color="red", linestyle="--")
 
         return fig, ax
+
+    def plot_categorical_betas(self,
+                               x_data: np.ndarray,
+                               features_to_plot: Optional[List[str]] = None,
+                               sample_size: float = 1,
+                               cols: int = 2) \
+            -> Tuple[plt.Figure, plt.Axes]:
+        """
+        plot box and whisker plots for each of the categorical
+        variables. For this to work, categorical features must be
+        one-hot encoded in the form {feature_name}_{value}
+
+        :param x_data: data for which we would like to plot our
+        beta values
+        :param features_to_plot: names for the features in our x_data
+        that we would like to plot
+        :param sample_size: % proportion of the feature values to sample
+        to create our plots
+        :param cols: number of columns in resulting plot
+        """
+
+        # set features if not defined and check inputs
+        if features_to_plot is None:
+            features_to_plot = list(self.col_indices_)
+            features_to_plot.remove("Random")  # only plot random threshold
+        self.check_plot_arguments(features_to_plot, sample_size,
+                                  is_categorical=True)
+
+        # get data sample and use it to calculate betas
+        x_data_sample = self.get_sampled_data(x_data, sample_size)
+        betas = self.beta_model_(x_data_sample).numpy()
+
+        # set up axes
+        rows = int(math.ceil(len(features_to_plot) / cols))
+        fig, axs = plt.subplots(rows, cols)
+
+        # plot box and whisker for each feature
+        for i, feature in enumerate(features_to_plot):
+
+            r, c = i // cols, i % cols
+            ax = axs[r, c]
+
+            categories = [col_name for col_name in list(self.col_indices_)
+                          if col_name.startswith(feature)]
+            category_names = [c.split("_")[-1] for c in categories]
+            category_indices = [self.col_indices_[c] for c in categories]
+            betas_for_feature = betas[:, category_indices]
+            ax.boxplot(betas_for_feature, labels=category_names)
+
+        return fig, axs

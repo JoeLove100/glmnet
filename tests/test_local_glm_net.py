@@ -15,7 +15,6 @@ class TestLocalGlmNet(unittest.TestCase):
     def test_feature_to_plot_not_in_col_indices(self):
         # arrange
         model = self._get_glm_model()
-        test_data = np.zeros(shape=(2, 2))
         test_features_to_plot = ["name_1", "name_2", "name_3"]
         model.col_indices_ = {"name_1": 1, "name_3": 2}
         test_sample = 0.5
@@ -23,6 +22,18 @@ class TestLocalGlmNet(unittest.TestCase):
         # act/assert
         with self.assertRaises(ValueError):
             model.check_plot_arguments(test_features_to_plot, test_sample)
+
+    def test_categorical_feature_not_in_col_indices(self):
+        # arrange
+        model = self._get_glm_model()
+        test_features_to_plot = ["feature1", "feature2"]
+        model.col_indices_ = {"feature1_val1": 1, "feature1_val2": 2}
+        test_sample = 0.5
+
+        # act/assert
+        with self.assertRaises(ValueError):
+            model.check_plot_arguments(test_features_to_plot, test_sample,
+                                       is_categorical=True)
 
     def test_sample_negative_fails(self):
         # arrange
