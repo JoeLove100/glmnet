@@ -245,7 +245,7 @@ fig.set_size_inches(10, 10)
 plt.show()
 
 # %%
-fig, axs = local_glm.plot_categorical_betas(features.values, features_to_plot=categorical_components, cols=1)
-fig.set_size_inches(10, 15)
+fig, axs = local_glm.plot_categorical_betas(features.values, features_to_plot=categorical_components, cols=2)
+fig.set_size_inches(20, 15)
 
 # %%
