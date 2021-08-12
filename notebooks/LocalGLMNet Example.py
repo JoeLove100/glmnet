@@ -87,7 +87,7 @@ fig.set_size_inches(15, 25)
 
 # %%
 fig, axs = glm_model.plot_feature_importance(dummy_features.values)
-fig.set_size_inches(10, 10)
+fig.set_size_inches(7, 7)
 
 # %% [markdown]
 # ### Read in and process Abalone data

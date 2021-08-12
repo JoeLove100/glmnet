@@ -31,6 +31,11 @@ are based on the values observed for a totally random feature with no relation t
 
 ![plot](./resources/attention_weights.png)
 
+Alternatively, we can look at the distribution of the actual contributions (ie the product of the attention weights 
+and the actual values). This shows the direct impact each feature is having on the predicted outcome.
+
+![plot](./resources/contributions.png)
+
 ### Feature interactions
 
 By computing the derivative of each attention beta weight with respect to each of the variables, we can see
@@ -47,7 +52,10 @@ we add a threshold based on the "importance" of a totally random variable.
 
 ## Categorical variables
 
-**TODO: add in charts for categorical variables**
+Currently, the package does not produce such sophisticated analysis for categorical variables. Still, we are able 
+to produce boxplots for the beta attention weights to give some comparative analysis between different categories.
+
+![plot](./resources/categorical_plots.png)
 
 ## Original paper
 
